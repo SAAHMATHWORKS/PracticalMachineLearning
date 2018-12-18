@@ -1,0 +1,161 @@
+---
+title: "Pratical Machine Learning Course Project"
+author: "THIBAUT SAAH"
+date: "18 décembre 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+# Import datasets
+
+##??? Training dataset
+
+
+```{r}
+urlTrain <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+if(!file.exists("MachineLearning/pml-training.csv")){
+  dir.create("MachineLearning")
+  download.file(url = urlTrain, destfile = "./MachineLearning/pml-training.csv")
+}
+```
+
+```{r}
+library(dplyr)
+pmlTrain <- read.csv("./MachineLearning/pml-training.csv")
+```
+```{r}
+dim(pmlTrain)
+```
+## Dataset to make prediction
+
+```{r}
+urlTest <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+if(!file.exists("MachineLearning/pml-testing.csv")){
+  download.file(url = urlTest, destfile = "./MachineLearning/pml-testing.csv")
+}
+```
+
+```{r}
+pmlTest <- read.csv("./MachineLearning/pml-testing.csv")
+```
+
+```{r}
+dim(pmlTest)
+```
+
+
+## Prepare Data
+
+```{r}
+isAnyMissing <- sapply(pmlTest, function (x) any(is.na(x) | x == ""))
+isPredictor <- !isAnyMissing & grepl("belt|[^(fore)]arm|dumbbell|forearm", names(isAnyMissing))
+predCandidates <- names(isAnyMissing)[isPredictor]
+predCandidates
+```
+
+
+
+
+## Subset the primary dataset to include only the **predictor candidates** and the 
+outcome variable, `classe
+
+
+```{r}
+varToInclude <- c(predCandidates, "classe")
+pmlTrain <- pmlTrain[, varToInclude]
+dim(pmlTrain)
+```
+
+
+## Split the dataset into a 70% training and 30% probing dataset.
+
+```{r}
+library(caret)
+set.seed(41983)
+inTrain <- createDataPartition(pmlTrain$classe, p=0.7, list = FALSE)
+trainSet <- pmlTrain[inTrain,]
+testSet <- pmlTrain[-inTrain,]
+```
+
+# Performing Machine Learning
+
+## Number of classification 's variables of each type 
+
+```{r}
+as.data.frame(table(pmlTrain$classe))
+```
+
+Bar plot
+
+
+```{r}
+p <- ggplot(data = as.data.frame(table(pmlTrain$classe)), aes(Var1, Freq, fill= Var1))+ggtitle("Number of each class")
+p+geom_bar(stat = "identity", color = "steelblue")
+```
+
+## Train a prediction model
+
+Using random forest, the out of sample error should be small.
+The error will be estimated using the 30% pmltrain sample.
+We would be quite happy with an error estimate of 5% or less.
+
+
+```{r}
+x <- trainSet[,-53]
+y <- trainSet[,53]
+```
+
+### Model on the training set
+
+```{r}
+# model fit
+library(parallel)
+library(doParallel)
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+fitControl <- trainControl(method = "cv",
+                           number = 2,
+                           allowParallel = TRUE)
+modFitRandForest <- train(x,y, method="rf",data=trainSet,trControl = fitControl)
+stopCluster(cluster)
+registerDoSEQ()
+```
+
+### Confusion Matrix and accuracy
+
+```{r}
+# prediction on Test dataset
+predictRandForest <- predict(modFitRandForest, newdata=testSet)
+confMatRandForest <- confusionMatrix(predictRandForest, testSet$classe)
+confMatRandForest
+```
+
+
+Result is good more than 99% of accuracy
+
+### plot matrix results
+
+```{r}
+# plot matrix results
+plot(confMatRandForest$table, col = confMatRandForest$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(confMatRandForest$overall['Accuracy'], 3)))
+```
+
+
+# Applying the rf Model to the Test Data
+
+
+```{r}
+predictTEST <- predict(modFitRandForest, newdata=pmlTest[,c(predCandidates)])
+predictTEST
+```
+
